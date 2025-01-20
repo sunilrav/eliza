@@ -1,4 +1,4 @@
-import { HandlerCallback } from "@elizaos/core";
+import { composeContext, Content, generateText, HandlerCallback, ModelClass } from "@elizaos/core";
 import {
     ActionExample,
     IAgentRuntime,
@@ -10,13 +10,13 @@ import {
 export const newsAction: Action = {
     name: "NEWS",
     similes: [
-        "NEWS", "GET_NEWS", "GET_CURRENT_NEWS", "GET_LATEST_NEWS", "NEWS_UPDATE"
+        "NEWS", "GET_NEWS", "GET_CURRENT_NEWS", "GET_LATEST_NEWS", "NEWS_UPDATE", "LATEST_NEWS"
     ],
     validate: async (_runtime: IAgentRuntime, _message: Memory) => {
         return true;
     },
     description:
-        "Get news for a search term when asked by the user.",
+        "Get the news for a search term when asked by the user.",
     handler: async (
         _runtime: IAgentRuntime,
         _message: Memory,
@@ -35,17 +35,39 @@ export const newsAction: Action = {
                         .join("\n\n");
         }
 
-        const searchTerm = _message.content.text;
+        const context = `Extract the search term from the user's message.
+                            The message is: ${_message.content.text}
+                            Only respond with the search term, do not include any other text.`;
+
+        const searchTerm = await generateText({
+            runtime: _runtime,
+            context,
+            modelClass: ModelClass.SMALL,
+            stop: ["\n"],
+        })
 
         const news_results = await getNews(searchTerm);
 
-        _callback({
-                text: "Here are the latest news articles for: " +
-                searchTerm +
-                "\n\n\n" +
-                news_results
+        const responseText = "Here are the news articles for: " +
+                                searchTerm +
+                                "\n\n\n" +
+                                news_results;
 
-        });
+        const newMemory: Memory = {
+            userId: _message.agentId,
+            agentId: _message.agentId,
+            roomId: _message.roomId,
+            content: {
+                text: responseText,
+                action: "NEWS_RESPONSE",
+                source: _message.content.source
+            } as Content,
+            embedding: new Array(384)
+        };
+
+        await _runtime.messageManager.createMemory(newMemory);
+
+        _callback(newMemory.content);
 
         return true;
     },
